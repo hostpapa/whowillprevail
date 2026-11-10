@@ -1,6 +1,6 @@
 DirectoryIndex index.html
 Options -Indexes
-<FilesMatch "^(config\.php|security\.php|mailer\.php|seed\.json|README-UA\.txt|.*\.sqlite.*)$">
+<FilesMatch "^(config\.php|config\.local\.php|configs\.js|\.env|security\.php|mailer\.php|zoho\.php|seed\.json|README-UA\.txt|.*\.sqlite.*)$">
   <IfModule mod_authz_core.c>
     Require all denied
   </IfModule>

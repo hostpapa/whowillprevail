@@ -16,8 +16,10 @@ header('X-Frame-Options: DENY');
 header('Referrer-Policy: same-origin');
 
 $CFG = require __DIR__ . '/config.php';
+/* config.local.php (optional, never committed): secrets kept out of git, e.g. the Zoho client. Same layout as config.php. */
+if (is_file(__DIR__ . '/config.local.php')) $CFG = array_replace_recursive($CFG, (array)require __DIR__ . '/config.local.php');
 const JF = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE;
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3; /* 3: {secrets} (Zoho CRM connection) */
 
 /* every JSON answer also carries who the server thinks you are, so the page notices an expired or revoked sign-in */
 function out($a, int $code = 200): void {
@@ -37,7 +39,7 @@ function isMy(): bool { return strtolower((string)(dbc()['driver'] ?? 'mysql')) 
 function q(string $sql): string {
   $p = preg_replace('/[^A-Za-z0-9_]/', '', (string)(dbc()['prefix'] ?? 'wwp_'));
   $m = [];
-  foreach (['docs', 'colrev', 'docrev', 'leases', 'meta', 'mail_log', 'rl', 'sessions', 'secmatrix', 'seclog'] as $t) $m['{' . $t . '}'] = $p . $t;
+  foreach (['docs', 'colrev', 'docrev', 'leases', 'meta', 'mail_log', 'rl', 'sessions', 'secmatrix', 'seclog', 'secrets'] as $t) $m['{' . $t . '}'] = $p . $t;
   return strtr($sql, $m);
 }
 /* INSERT ... or UPDATE the non-key columns when the key exists (MySQL and SQLite spell this differently) */
@@ -100,6 +102,7 @@ function installSchema(PDO $pdo): void {
       "CREATE TABLE IF NOT EXISTS {sessions} (sid VARCHAR(64) $a, role VARCHAR(10) $a, subj VARCHAR(100) $a, pid VARCHAR(200) CHARACTER SET utf8mb4 NOT NULL, created BIGINT NOT NULL, expires BIGINT NOT NULL, seen BIGINT NOT NULL, ip VARCHAR(45) $a, PRIMARY KEY (sid), KEY sess_subj (subj), KEY sess_exp (expires)) $tail",
       "CREATE TABLE IF NOT EXISTS {secmatrix} (k VARCHAR(190) $a, n BIGINT NOT NULL, ts BIGINT NOT NULL, PRIMARY KEY (k)) $tail",
       "CREATE TABLE IF NOT EXISTS {seclog} (ts BIGINT NOT NULL, ip VARCHAR(45) $a, role VARCHAR(10) $a, kind VARCHAR(20) $a, detail VARCHAR(240) CHARACTER SET utf8mb4 NOT NULL, KEY sl_ts (ts)) $tail",
+      "CREATE TABLE IF NOT EXISTS {secrets} (k VARCHAR(50) $a, v TEXT $a, ts BIGINT NOT NULL, PRIMARY KEY (k)) $tail",
     ];
   } else {
     $sql = [
@@ -115,6 +118,7 @@ function installSchema(PDO $pdo): void {
       'CREATE INDEX IF NOT EXISTS {sessions}_subj ON {sessions}(subj)',
       'CREATE TABLE IF NOT EXISTS {secmatrix} (k TEXT PRIMARY KEY, n INTEGER NOT NULL, ts INTEGER NOT NULL)',
       'CREATE TABLE IF NOT EXISTS {seclog} (ts INTEGER NOT NULL, ip TEXT NOT NULL, role TEXT NOT NULL, kind TEXT NOT NULL, detail TEXT NOT NULL)',
+      'CREATE TABLE IF NOT EXISTS {secrets} (k TEXT PRIMARY KEY, v TEXT NOT NULL, ts INTEGER NOT NULL)',
     ];
   }
   foreach ($sql as $s) $pdo->exec(q($s));
@@ -240,6 +244,10 @@ function runQuery(PDO $pdo, string $col, array $o): array {
 
 require __DIR__ . '/security.php';
 require __DIR__ . '/mailer.php';
+require __DIR__ . '/zoho.php';
+
+/* back from Zoho's sign-in (zoho-callback.php, a GET): stores the connection, then redirects to the game */
+if (defined('WWP_ZOHO_CALLBACK')) { $pdo = db(); zoho_callback($pdo, sess_current($pdo)); }
 
 /* ---------- diagnostics (GET, needs the setup key) ----------
    api.php?diag=1&key=...   api.php?seclog=1&key=...   api.php?mailtest=1&to=you@example.com&key=... */
@@ -560,6 +568,26 @@ switch ($op) {
     }
     if ($data === null) fail('server_error', 'Claude did not return JSON', 502);
     out(['data' => $data]);
+
+  /* ----- Zoho CRM player import (admin only; see zoho.php) ----- */
+  case 'zoho_status':
+    need_role($pdo, $S, 'admin', 'zoho');
+    out(['ok' => true] + zoho_status($pdo));
+
+  case 'zoho_connect':
+    need_role($pdo, $S, 'admin', 'zoho');
+    try { out(['ok' => true, 'url' => zoho_auth_url($pdo, $S)]); }
+    catch (ZohoError $e) { fail($e->zcode, $e->getMessage(), 409); }
+
+  case 'zoho_users':
+    need_role($pdo, $S, 'admin', 'zoho');
+    try { out(['ok' => true, 'users' => zoho_users($pdo)]); }
+    catch (ZohoError $e) { fail($e->zcode, $e->getMessage(), $e->zcode === 'zoho_error' ? 502 : 409); }
+
+  case 'zoho_disconnect':
+    need_role($pdo, $S, 'admin', 'zoho');
+    zoho_disconnect($pdo); sec_event($pdo, $S, 'zoho', 'disconnected');
+    out(['ok' => true]);
 
   default:
     fail('invalid_argument', 'Unknown operation');

@@ -1,0 +1,12 @@
+{
+  "name": "whowillprevail",
+  "private": true,
+  "description": "Gamified sales showdown. Node is only used for the FTP deploy script (deploy.js).",
+  "scripts": {
+    "deploy": "node deploy.js",
+    "deploy:dry": "node deploy.js --dry-run"
+  },
+  "devDependencies": {
+    "basic-ftp": "^6.2.6"
+  }
+}

@@ -1,2 +1,6 @@
 check.php
 seed.json
+config.local.php
+configs.js
+.env
+node_modules/

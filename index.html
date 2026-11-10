@@ -597,8 +597,8 @@ nav.tabs .lang-toggle button:active{transform:none}
     <div class="panel stack" id="bulk">
       <div class="row" style="justify-content:space-between;align-items:flex-end">
         <div><h2 style="font-size:28px">Bulk import players</h2>
-          <p class="small muted" style="margin:4px 0 0">Add many players at once from an Excel spreadsheet. You'll see a preview and confirm before anything is created. Each new player gets a card and an invitation email to create their own password.</p></div>
-        <div class="row"><button type="button" class="btn secondary" id="tplDl">Download Excel Template</button><button type="button" class="btn" id="bulkPick">Upload spreadsheet</button></div>
+          <p class="small muted" style="margin:4px 0 0">Add many players at once from an Excel spreadsheet or from Zoho CRM. You'll see a preview and confirm before anything is created. Each new player gets a card and an invitation email to create their own password.</p></div>
+        <div class="row"><button type="button" class="btn secondary" id="tplDl">Download Excel Template</button><button type="button" class="btn secondary" id="zohoPick">Import from Zoho CRM</button><button type="button" class="btn" id="bulkPick">Upload spreadsheet</button></div>
       </div>
       <input type="file" id="bulkPhotos" accept="image/jpeg,image/png,image/webp" multiple hidden>
       <input type="file" id="bulkFile" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" hidden>
@@ -2583,6 +2583,7 @@ function applyRole(){
   $("#gate").hidden=!!ROLE; document.querySelector(".wrap").hidden=!ROLE;
   ADMIN_TABS.forEach(t=>{const b=document.querySelector(`nav.tabs [data-tab="${t}"]`);if(b)b.hidden=ROLE!=="admin"});
   if(ROLE){setTab(ROLE!=="admin"&&ADMIN_TABS.includes(tab)?"arena":tab);if(ROLE==="admin")autoIssueResets()}else{gateForce=true;renderGate();syncMusic()}
+  if(ROLE==="admin"&&ZOHO_BACK){const z=ZOHO_BACK;ZOHO_BACK=null;setTimeout(()=>zohoBack(z),0)}
 }
 function signOut(){sessClear();ROLE=null;ME=null;playerView="signin";EMAILED=null;SELMOVE=null;MVNOTE=null;applyRole();syncMovesSub();toast("SEE YOU!","Signed out.")}
 function fanCards(){
@@ -3495,7 +3496,14 @@ const HDR={playername:"name",name:"name",fullname:"name",player:"name",repname:"
   headshotfile:"photo",headshot:"photo",photo:"photo",photofile:"photo",headshotphoto:"photo",image:"photo",picture:"photo"};
 const PHOTO_EXT=/\.(jpe?g|png|webp)$/i, photoKey=n=>String(n||"").split(/[\\/]/).pop().trim().toLowerCase();
 const normHdr=h=>String(h??"").toLowerCase().replace(/\(.*?\)/g,"").replace(/[^a-z]/g,"");
-let IMP=null; /* {file, rows, warnings, counts, phase} */
+let IMP=null; /* {file, rows, warnings, counts, phase}; source "zoho" for the Zoho CRM import */
+/* a valid email: the same address twice in the list is an error; already on the roster or with an account is skipped */
+async function vetEmail(o,seen){
+  if(seen.has(o.email))o.errs.push(`Same email address as row ${seen.get(o.email)}.`);else seen.set(o.email,o.row);
+  if(!o.errs.length){const key=await emailKey(o.email),a=acctByKey(key);o.key=key;
+    const onRoster=S.players.find(p=>normEmail(p.email)===o.email);
+    if((a&&byId(a.pid))||onRoster){o.status="skip";o.why=a&&a.status==="active"?"Already has an active account.":"Already on the roster with this email."}}
+}
 async function parseImport(file){
   if(!/\.xlsx?$/i.test(file.name||""))return {fatal:"That file isn't an Excel workbook. Upload the .xlsx template filled in with your players."};
   if(file.size>5*1024*1024)return {fatal:"That file is too large. Keep it under 5 MB."};
@@ -3544,11 +3552,7 @@ async function parseImport(file){
     else if(/^(female|f|woman|mujer|femenino)$/.test(fg))o.gender="f";
     else o.errs.push("Figure must be Male or Female, or left blank.");
     if(o.photoName&&!PHOTO_EXT.test(o.photoName))o.errs.push("Headshot file must be a .jpg, .jpeg, .png or .webp file name.");
-    if(o.email&&EMAIL_RE.test(o.email)){
-      if(seen.has(o.email))o.errs.push(`Same email address as row ${seen.get(o.email)}.`);else seen.set(o.email,rowNum);
-      if(!o.errs.length){const key=await emailKey(o.email),a=acctByKey(key);o.key=key;
-        const onRoster=S.players.find(p=>normEmail(p.email)===o.email);
-        if((a&&byId(a.pid))||onRoster){o.status="skip";o.why=a&&a.status==="active"?"Already has an active account.":"Already on the roster with this email."}}}
+    if(o.email&&EMAIL_RE.test(o.email))await vetEmail(o,seen);
     if(o.errs.length)o.status="error";
     rows.push(o);
   }
@@ -3583,7 +3587,8 @@ function renderImport(){
   if(!IMP){el.innerHTML="";return}
   if(IMP.fatal){el.innerHTML=`<div class="msg err" role="alert">${esc(IMP.fatal)}</div><div class="row"><button type="button" class="btn secondary" data-imp="cancel">Close</button></div>`;return}
   if(IMP.phase==="parsing"){el.innerHTML=`<p class="small"><span>Reading</span> <b class="notranslate">${esc(IMP.file)}</b>…</p>`;return}
-  const c=IMP.counts, done=IMP.phase==="done", running=IMP.phase==="running";
+  if(IMP.phase==="zconnect"){el.innerHTML=zohoConnectHTML();return}
+  const c=IMP.counts, done=IMP.phase==="done", running=IMP.phase==="running", zoho=IMP.source==="zoho", pick=zoho&&!done&&!running;
   const rowStatus=r=>{
     if(done||running){if(r.result==="created")return `<span class="st active">Created</span> ${r.invite==="ready"?`<span class="st pending">Invitation ready to send</span>`:r.invite==="sent"?`<span class="st sent">Invitation sent</span>`:`<span class="st failed">Invitation failed</span>`}`;
       if(r.result==="skip")return `<span class="st none">Skipped</span> <span class="small muted">${esc(r.why||"Already registered.")}</span>`;
@@ -3599,20 +3604,26 @@ function renderImport(){
   const res=IMP.rows.filter(r=>r.result==="created").length, failed=IMP.rows.filter(r=>r.result==="failed").length, skipped=IMP.rows.filter(r=>r.result==="skip").length;
   const invReady=IMP.rows.filter(r=>r.invite==="ready").length, invSent=IMP.rows.filter(r=>r.invite==="sent").length, invFail=IMP.rows.filter(r=>r.result==="created"&&r.invite==="failed").length;
   el.innerHTML=`
-  <div class="imp-head"><p class="small" style="margin:0"><span>File:</span> <b class="notranslate">${esc(IMP.file)}</b> · <span>sheet</span> <b class="notranslate">${esc(IMP.sheet)}</b></p>
+  <div class="imp-head">${zoho?`<div class="row" style="justify-content:space-between"><p class="small" style="margin:0"><span>Source:</span> <b>Zoho CRM</b> · <span>active users: ${IMP.rows.length}</span></p>${pick?`<button type="button" class="btn secondary sm" data-imp="zdisc">Disconnect Zoho CRM</button>`:""}</div>`
+    :`<p class="small" style="margin:0"><span>File:</span> <b class="notranslate">${esc(IMP.file)}</b> · <span>sheet</span> <b class="notranslate">${esc(IMP.sheet)}</b></p>`}
   ${done?`<div class="msg info" role="status"><b>Import finished.</b> <span>Players created: ${res}</span> · <span>Skipped (already registered): ${skipped+c.skip}</span> · <span>Not imported because of errors: ${c.error}</span>${IMP.rows.some(r=>r.photoAdded)?` · <span>Headshots added: ${IMP.rows.filter(r=>r.photoAdded).length}</span>`:""}${failed?` · <span>Failed to save: ${failed}</span>`:""}<br>${invReady?`<span>${invReady} invitation emails are ready to send in Player accounts below.</span> `:""}${invSent?`<span>Invitations sent: ${invSent}</span> `:""}${invFail?`<span>Invitations that failed: ${invFail}. Use Resend in Player accounts.</span>`:""}</div>`
   :`<div class="imp-sum"><span class="st active"><span>${c.ok}</span> <span>ready</span></span> <span class="st none"><span>${c.skip}</span> <span>already registered</span></span> <span class="st failed"><span>${c.error}</span> <span>with errors</span></span>${IMP.blank?` <span class="small muted">Empty rows ignored: ${IMP.blank}</span>`:""}</div>`}
+  ${pick?`<p class="small muted" style="margin:0">Everyone ready to import is ticked. Untick the people who shouldn't play. Sales strength and figure start at their defaults; change them later in the Card forge.</p>
+    <label class="f" for="zFilter" style="max-width:360px">Filter<input type="search" id="zFilter" placeholder="Name, email or role" value="${esc(IMP.q||"")}"></label>`:""}
   ${!done&&!running?photoBlock():""}
   ${IMP.warnings.length&&!done?`<div class="note">${IMP.warnings.map(w=>`<div><span>Column</span> <b class="notranslate">“${esc(w.col)}”</b> <span>${WARN_TXT[w.t]}</span></div>`).join("")}</div>`:""}</div>
-  <div class="tbl-wrap imp-tbl"><table class="tbl"><thead><tr><th>Row</th><th>Player name</th><th>Email address</th><th>Role or team</th><th>Sales strength</th><th>Figure</th>${IMP.rows.some(r=>r.photoName)?"<th>Headshot</th>":""}<th>Result</th></tr></thead>
-  <tbody>${IMP.rows.map(r=>`<tr class="${r.status}"><td class="small muted">${r.row}</td><td class="notranslate">${esc(r.name)}</td><td class="notranslate em">${esc(r.email)}</td><td class="notranslate">${esc(r.role)}</td><td>${strengthTxt(r)}</td><td>${figureTxt(r)}${r.figureDefault&&r.status!=="sample"?` <span class="small muted">(not set)</span>`:""}</td>${IMP.rows.some(x=>x.photoName)?`<td>${photoCell(r)}</td>`:""}<td>${rowStatus(r)}</td></tr>`).join("")}</tbody></table></div>
+  <div class="tbl-wrap imp-tbl"><table class="tbl"><thead><tr><th>${pick?`<input type="checkbox" id="zAll" aria-label="Tick everyone ready to import">`:"Row"}</th><th>Player name</th><th>Email address</th><th>Role or team</th><th>Sales strength</th><th>Figure</th>${IMP.rows.some(r=>r.photoName)?"<th>Headshot</th>":""}<th>Result</th></tr></thead>
+  <tbody>${IMP.rows.map((r,i)=>`<tr class="${r.status}" data-i="${i}"${pick&&!zMatch(r)?" hidden":""}><td class="small muted">${pick?(r.status==="ok"?`<input type="checkbox" data-zsel="${i}"${r.sel?" checked":""} aria-label="Import ${esc(r.name)}">`:""):r.row}</td><td class="notranslate">${esc(r.name)}</td><td class="notranslate em">${esc(r.email)}</td><td class="notranslate">${esc(r.role)}</td><td>${strengthTxt(r)}</td><td>${figureTxt(r)}${r.figureDefault&&r.status!=="sample"?` <span class="small muted">(not set)</span>`:""}</td>${IMP.rows.some(x=>x.photoName)?`<td>${photoCell(r)}</td>`:""}<td>${rowStatus(r)}</td></tr>`).join("")}</tbody></table></div>
   ${done?`<div class="row"><button type="button" class="btn" data-imp="cancel">Done</button></div>`
   :running?`<p class="small" role="status" id="impProg">${esc(IMP.prog||"")}</p>`
+  :zoho?`${!c.ok?`<p class="small muted">Everyone in Zoho CRM is already registered, so there's nothing new to import.</p>`:""}
+    <div class="row"><button type="button" class="btn" data-imp="go" disabled>Create 0 players and send invitations</button><button type="button" class="btn secondary" data-imp="cancel">Cancel</button></div>`
   :`${c.error&&c.ok?`<label class="newrep"><input type="checkbox" id="impAck"> <span><b>Import the ${c.ok} ready rows now</b><br><span class="small muted">Rows with errors won't be imported. Fix them in the spreadsheet and upload it again later; players already imported are skipped automatically.</span></span></label>`:""}
     ${c.error&&!c.ok?`<p class="small err-t">Nothing can be imported yet. Fix the rows marked Error and upload the file again.</p>`:""}
     ${!c.ok&&!c.error?`<p class="small muted">Everyone in this file is already registered, so there's nothing new to import.</p>`:""}
     <div class="row"><button type="button" class="btn" data-imp="go" ${c.ok&&!c.error?"":"disabled"}>Create ${c.ok} players and send invitations</button><button type="button" class="btn secondary" data-imp="cancel">Cancel</button></div>`}`;
   const ack=$("#impAck"); if(ack)ack.onchange=()=>{el.querySelector('[data-imp="go"]').disabled=!ack.checked};
+  if(pick)zohoSync();
 }
 /* find the head in a headshot (Claude, when this view allows photos); null falls back to the standard framing */
 async function faceBox(blob){
@@ -3625,7 +3636,7 @@ async function faceBox(blob){
   return null;
 }
 async function runImport(){
-  IMP.phase="running"; const todo=IMP.rows.filter(r=>r.status==="ok"); let i=0; const t0=Date.now();
+  IMP.phase="running"; const todo=IMP.rows.filter(r=>r.status==="ok"&&r.sel!==false); let i=0; const t0=Date.now();
   for(const r of todo){i++; IMP.prog=`Creating player ${i} of ${todo.length}…`; r.result="working"; renderImport();
     try{
       const key=r.key||await emailKey(r.email), a=acctByKey(key);
@@ -3663,7 +3674,86 @@ $("#bulkPhotos").addEventListener("change",()=>{const fs=[...$("#bulkPhotos").fi
 $("#bulkOut").addEventListener("click",e=>{const b=e.target.closest("[data-imp]");if(!b)return;
   if(b.dataset.imp==="photos"){$("#bulkPhotos").click();return}
   if(b.dataset.imp==="cancel"){IMP=null;renderImport();return}
+  if(b.dataset.imp==="zconnect"){zohoConnect(b);return}
+  if(b.dataset.imp==="zdisc"){zohoDisconnect(b);return}
+  if(b.dataset.imp==="zcopy"){const u=IMP?.redirectUri||"";copyRich(esc(u),u).then(ok=>toast(ok?"COPIED!":"HOLD UP",ok?"Redirect URI copied.":"This browser blocked copying."));return}
   if(b.dataset.imp==="go"&&IMP?.phase==="preview"){b.disabled=true;runImport()}});
+
+/* ---------- import from Zoho CRM ----------
+   The server holds the Zoho connection (zoho.php: Server-based client, refresh token kept encrypted, read-only scope
+   ZohoCRM.users.READ). The page asks for the CRM's active users and feeds them to the same preview and import as the
+   spreadsheet: everyone ready is ticked, the admin unticks who shouldn't play. */
+var ZOHO_BACK=null; /* the result of the Zoho sign-in (#zoho.<result>), handled once an admin is signed in */
+{const m=/^#zoho\.([a-z]+)$/.exec(location.hash); if(m){ZOHO_BACK=m[1];try{history.replaceState(null,"",location.pathname+location.search)}catch{}}}
+const ZOHO_BACK_TXT={denied:"Zoho CRM wasn't connected: access wasn't allowed in Zoho.",
+  state:"That Zoho sign-in expired or was started in another window. Try Connect Zoho CRM again.",
+  signin:"Sign in as admin first, then connect Zoho CRM again.",
+  token:"Zoho didn't give the game access. Check that the Zoho client is a Server-based application with the Redirect URI shown in the import, then try again."};
+const zohoErrText=e=>e?.code==="no_game_url"?"Set the Game link in Branding (or game_url in config.php) first: Zoho sends you back to that address after you sign in."
+  :e?.code==="zoho_not_configured"?"Zoho CRM isn't set up on this server yet. Put the Zoho client ID and secret in config.local.php (see the ZOHO CRM part of config.php)."
+  :e?.code==="permission_denied"?"Sign in as admin to import from Zoho CRM."
+  :e?.message||"Couldn't reach Zoho CRM. Try again.";
+const ZSRC={file:"Zoho CRM",source:"zoho"};
+async function zohoRows(users){
+  const rows=[],seen=new Map(); let n=0;
+  for(const u of users){n++;
+    const o={row:n,name:String(u.name||"").replace(/\s+/g," ").trim(),email:normEmail(String(u.email||"")),role:String(u.role||u.profile||"").replace(/\s+/g," ").trim().slice(0,40),
+      photoName:"",errs:[],status:"ok",unrated:true,rating:55,gender:"m",figureDefault:true,rawStrength:"",rawFigure:"",sel:true};
+    if(!o.name)o.errs.push("Player name is missing.");else if(o.name.length>40)o.errs.push("Player name is longer than 40 characters.");
+    if(!o.email)o.errs.push("Email address is missing.");else if(!EMAIL_RE.test(o.email))o.errs.push("Email address isn't valid.");
+    if(o.email&&EMAIL_RE.test(o.email))await vetEmail(o,seen);
+    if(o.errs.length)o.status="error";
+    rows.push(o)}
+  const counts={ok:0,skip:0,error:0,sample:0};rows.forEach(r=>counts[r.status]++);
+  return {rows,warnings:[],counts,blank:0,photos:new Map()};
+}
+async function startZohoImport(){
+  IMP={...ZSRC,phase:"parsing"};renderImport();
+  try{const st=await SRV("zoho_status");
+    if(!st.configured)IMP={...ZSRC,fatal:zohoErrText({code:"zoho_not_configured"})};
+    else if(!st.connected)IMP={...ZSRC,phase:"zconnect",redirectUri:st.redirectUri};
+    else{const r=await SRV("zoho_users");
+      IMP=r.users?.length?{...ZSRC,phase:"preview",...await zohoRows(r.users)}:{...ZSRC,fatal:"Zoho CRM has no active users to import."}}}
+  catch(e){
+    if(e?.code==="zoho_not_connected"){const st=await SRV("zoho_status").catch(()=>({}));IMP={...ZSRC,phase:"zconnect",note:e.message,redirectUri:st.redirectUri}}
+    else IMP={...ZSRC,fatal:zohoErrText(e)}}
+  renderImport(); $("#bulkOut").scrollIntoView({block:"nearest",behavior:"smooth"});
+}
+function zohoConnectHTML(){
+  const ru=IMP.redirectUri;
+  return `<div class="msg info" role="status"><b>Connect Zoho CRM</b><br>${IMP.note?`<span>${esc(IMP.note)}</span><br>`:""}
+    <span>Sign in to Zoho once with an account that can see the CRM users. The game only reads the list of active users (name, email, role) and never changes anything in Zoho.</span></div>
+    ${ru?`<p class="small" style="margin:0"><span>The Zoho client must list this Redirect URI:</span> <b class="notranslate em">${esc(ru)}</b> <button type="button" class="btn secondary sm" data-imp="zcopy">Copy</button></p>`
+      :`<p class="small err-t">${esc(zohoErrText({code:"no_game_url"}))}</p>`}
+    <div class="row"><button type="button" class="btn" data-imp="zconnect"${ru?"":" disabled"}>Connect Zoho CRM</button><button type="button" class="btn secondary" data-imp="cancel">Cancel</button></div>`;
+}
+async function zohoConnect(b){b.disabled=true;
+  try{const r=await SRV("zoho_connect");location.href=r.url}
+  catch(e){b.disabled=false;IMP={...ZSRC,fatal:zohoErrText(e)};renderImport()}}
+async function zohoDisconnect(b){b.disabled=true;
+  try{await SRV("zoho_disconnect");IMP=null;renderImport();toast("DONE","Zoho CRM is disconnected. Connect again to import.")}
+  catch(e){b.disabled=false;toast("HOLD UP",zohoErrText(e))}}
+/* back from Zoho's sign-in: carry on with the import, or say what went wrong */
+function zohoBack(what){
+  setTab("forge"); setTimeout(()=>$("#bulk")?.scrollIntoView({behavior:"smooth",block:"start"}),300);
+  if(what==="ok"){toast("CONNECTED!","Zoho CRM is connected.");startZohoImport();return}
+  IMP={...ZSRC,fatal:ZOHO_BACK_TXT[what]||ZOHO_BACK_TXT.token};renderImport();
+}
+const zMatch=r=>{const q=(IMP?.q||"").trim().toLowerCase();return !q||[r.name,r.email,r.role].some(v=>String(v||"").toLowerCase().includes(q))};
+const zVisible=()=>IMP.rows.filter(r=>r.status==="ok"&&zMatch(r));
+/* the button and the "tick all" box follow the ticks (no re-render, so focus and the filter stay put) */
+function zohoSync(){
+  if(!IMP||IMP.source!=="zoho"||!IMP.rows)return;
+  const n=IMP.rows.filter(r=>r.status==="ok"&&r.sel).length, go=$("#bulkOut").querySelector('[data-imp="go"]');
+  if(go){go.disabled=!n;go.textContent=n===1?"Create 1 player and send an invitation":`Create ${n} players and send invitations`}
+  const all=$("#zAll"); if(all){const vis=zVisible();all.checked=vis.length>0&&vis.every(r=>r.sel);all.indeterminate=!all.checked&&vis.some(r=>r.sel);all.disabled=!vis.length}
+}
+$("#zohoPick").onclick=startZohoImport;
+$("#bulkOut").addEventListener("change",e=>{if(!IMP||IMP.source!=="zoho")return;const t=e.target;
+  if(t.dataset.zsel!=null){IMP.rows[+t.dataset.zsel].sel=t.checked;zohoSync()}
+  else if(t.id==="zAll"){zVisible().forEach(r=>r.sel=t.checked);$("#bulkOut").querySelectorAll("[data-zsel]").forEach(x=>{x.checked=!!IMP.rows[+x.dataset.zsel].sel});zohoSync()}});
+$("#bulkOut").addEventListener("input",e=>{if(e.target.id!=="zFilter"||!IMP)return;IMP.q=e.target.value;
+  $("#bulkOut").querySelectorAll("tr[data-i]").forEach(tr=>{tr.hidden=!zMatch(IMP.rows[+tr.dataset.i])});zohoSync()});
 
 /* ---------- template download ---------- */
 const TEMPLATE_NAME="Player_Bulk_Import_Template.xlsx";
