@@ -28,8 +28,9 @@ const FILES = ['index.html', 'claude-shim.js', 'api.php', 'security.php', 'maile
   '.htaccess', 'web.config'];
 const OPTIONAL = ['config.local.php'];
 const DIRS = ['audio'];
+/* the root .htaccess goes too: the game's replaces it and keeps the hosting's SSL provisioning block at the top */
 const OLD_APP = ['api', 'fonts', 'static', 'asset-manifest.json', 'favicon.ico', 'index.html', 'robots.txt',
-  'service-worker.js', /^precache-manifest\..*\.js$/];
+  'service-worker.js', /^precache-manifest\..*\.js$/, '.htaccess', 'web.config'];
 const OLD_GAME = 'whowill26';
 
 const KILL_SW = `/* Who Will Prevail. This address used to host a React app whose service worker served its cached pages. This
