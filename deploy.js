@@ -84,8 +84,20 @@ async function copyRemote(c, from, to) {
   try { await c.downloadTo(tmp, from); await c.uploadFrom(tmp, to); } finally { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); }
 }
 const names = async (c, dir) => (await c.list(dir)).filter((i) => !/^\.\.?$/.test(i.name));
+/* The hosting's front cache keeps .js for 10 years whatever .htaccess says; index.html isn't cached. So index.html
+   asks for claude-shim.js?v=<hash of its content>: a changed script gets a new address and reaches every browser. */
+const versioned = (html) => {
+  const v = require('crypto').createHash('sha1').update(fs.readFileSync(local('claude-shim.js'))).digest('hex').slice(0, 10);
+  const out = html.replace('<script src="claude-shim.js"></script>', `<script src="claude-shim.js?v=${v}"></script>`);
+  if (out === html) throw new Error('index.html has no <script src="claude-shim.js"> to version');
+  return out;
+};
 async function uploadGame(c, dest) {
-  for (const f of files) { await c.uploadFrom(local(f), path.posix.join(dest, f)); say(`  uploaded ${f}`); }
+  for (const f of files) {
+    if (f === 'index.html') await putText(c, versioned(fs.readFileSync(local(f), 'utf8')), path.posix.join(dest, f));
+    else await c.uploadFrom(local(f), path.posix.join(dest, f));
+    say(`  uploaded ${f}`);
+  }
   for (const d of DIRS) if (fs.existsSync(local(d))) { await c.uploadFromDir(local(d), path.posix.join(dest, d)); await c.cd('/'); say(`  uploaded ${d}/`); }
   await putText(c, KILL_SW, path.posix.join(dest, 'service-worker.js')); say('  uploaded service-worker.js (removes the old one)');
 }
