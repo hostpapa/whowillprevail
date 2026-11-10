@@ -78,10 +78,13 @@ return [
        <the game's address>zoho-callback.php     e.g. https://whowillprevail.com/zoho-callback.php
      (the import screen shows the exact address). Put its Client ID and Client Secret in config.local.php,
      not here, so they never end up in git:  <?php return ['zoho' => ['client_id' => '...', 'client_secret' => '...']];
-     accounts_url is the Zoho sign-in server of your data center (Canada: https://accounts.zohocloud.ca). */
+     accounts_url is the Zoho sign-in server of your data center (Canada: https://accounts.zohocloud.ca).
+     redirect_uri: set it when the Zoho client lists the site's own address instead (e.g. 'https://whowillprevail.com');
+     it must match the Zoho client exactly, and the game must be at that address (its page forwards to zoho-callback.php). */
   'zoho' => [
     'client_id' => '',
     'client_secret' => '',
     'accounts_url' => 'https://accounts.zohocloud.ca',
+    'redirect_uri' => '',   /* set in config.local.php, which deploy.js uploads */
   ],
 ];

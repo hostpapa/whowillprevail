@@ -20,13 +20,18 @@ class ZohoError extends RuntimeException {
 function zoho_cfg(): array {
   global $CFG; $z = (array)($CFG['zoho'] ?? []);
   $acc = rtrim(trim((string)($z['accounts_url'] ?? '')), '/');
+  $ru = trim((string)($z['redirect_uri'] ?? ''));
   return ['client_id' => trim((string)($z['client_id'] ?? '')), 'client_secret' => trim((string)($z['client_secret'] ?? '')),
-          'accounts_url' => preg_match(ZOHO_ACCOUNTS_RX, $acc) ? $acc : 'https://accounts.zohocloud.ca'];
+          'accounts_url' => preg_match(ZOHO_ACCOUNTS_RX, $acc) ? $acc : 'https://accounts.zohocloud.ca',
+          'redirect_uri' => preg_match('~^https?://[^\s#?@\\\\]+$~i', $ru) ? $ru : ''];
 }
 function zoho_configured(): bool { $c = zoho_cfg(); return $c['client_id'] !== '' && $c['client_secret'] !== ''; }
 
-/* The address Zoho sends the admin back to; it must be listed as a Redirect URI of the Zoho client */
+/* The address Zoho sends the admin back to; it must be listed, exactly, as a Redirect URI of the Zoho client.
+   zoho.redirect_uri when set (e.g. the site's own address, whose main page forwards the code to zoho-callback.php),
+   otherwise <game address>zoho-callback.php. */
 function zoho_redirect_uri(PDO $pdo): ?string {
+  if (($ru = zoho_cfg()['redirect_uri']) !== '') return $ru;
   $g = game_url($pdo); if ($g === null) return null;
   $path = (string)parse_url($g, PHP_URL_PATH);
   $base = preg_match('~/[^/]*\.[a-z0-9]+$~i', $path) ? preg_replace('~[^/]*$~', '', $g) : rtrim($g, '/') . '/';

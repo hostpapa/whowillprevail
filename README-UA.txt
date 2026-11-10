@@ -96,9 +96,11 @@ ZohoCRM.users.READ), у Zoho нічого не змінює.
 
 Налаштування (один раз):
 1. Zoho API Console (api-console.zohocloud.ca, наш акаунт у канадському дата-центрі): клієнт типу
-   "Server-based Applications". У Authorized Redirect URIs додайте адресу гри + zoho-callback.php, наприклад
-     https://whowillprevail.com/zoho-callback.php
-   Точну адресу показує сама гра на екрані "Connect Zoho CRM" (кнопка Copy).
+   "Server-based Applications". Його Authorized Redirect URI вже є: https://whowillprevail.com (адреса гри), і саме її
+   гра передає в Zoho (config.php: zoho.redirect_uri). Zoho повертає адміна на головну сторінку гри, а та одразу
+   передає одноразовий код у zoho-callback.php. Нічого додавати в Zoho не треба.
+   Якщо Zoho на вході пише "Invalid Redirect Uri", значення в Zoho інше (наприклад з "/" у кінці): впишіть у
+   zoho.redirect_uri точно те, що стоїть у Zoho. Без redirect_uri гра використовує адресу гри + zoho-callback.php.
 2. Client ID і Client Secret цього клієнта впишіть у config.local.php (лежить поруч із config.php, у git НЕ потрапляє):
      <?php return ['zoho' => ['client_id' => '...', 'client_secret' => '...']];
    і завантажте його на хостинг. Інший дата-центр: додайте 'accounts_url' (наприклад https://accounts.zoho.com).
@@ -131,9 +133,8 @@ secure: за замовчуванням FTPS (шифроване з'єднанн
     з уже надісланих листів працюють;
   - у корінь кладеться service-worker.js, який прибирає з браузерів відвідувачів service worker старої React-апки
     (інакше він показував би їм старий сайт із кешу).
-ПІСЛЯ першого деплою: Branding > Game link = https://whowillprevail.com/ (адреса в листах і для Zoho), у Zoho API
-Console додати Redirect URI https://whowillprevail.com/zoho-callback.php. Усім доведеться увійти ще раз (сесії
-прив'язані до адреси). Наступні деплої просто перезаписують файли гри.
+ПІСЛЯ першого деплою: Branding > Game link = https://whowillprevail.com/ (адреса в листах). Усім доведеться увійти ще
+раз (сесії прив'язані до адреси). Наступні деплої просто перезаписують файли гри.
 config.php заливається лише з --with-config (на сервері своя копія з робочими налаштуваннями). Після деплою скрипт
 перевіряє api.php?op=info.
 
