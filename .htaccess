@@ -5,6 +5,13 @@ RewriteBase /
 RewriteCond %{REQUEST_URI} ".*/\.well-known/.*" [NC]
 RewriteRule ^.*\.well-known(/.*)?$ - [END]
 ### SSL PROVISIONING CODE END
+# Addresses of the old React app that lived here (/login, /dashboard ...): send visitors to the game.
+# Only paths that are not a file, not a folder and have no file extension; never .well-known or the backups.
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_URI} !\.[A-Za-z0-9]+$
+RewriteCond %{REQUEST_URI} !^/(\.well-known|_backup|_deploy-new)(/|$)
+RewriteRule ^ / [R=302,L]
 DirectoryIndex index.html
 Options -Indexes
 # deploy backups (deploy.js) are never served
@@ -19,6 +26,11 @@ RedirectMatch 404 ^/(_backup|_deploy-new)(/|$)
   </IfModule>
 </FilesMatch>
 <IfModule mod_headers.c>
+  # The game's pages and scripts: the browser checks for a newer version every time (the hosting caches .js for 10 years)
+  <FilesMatch "\.(html|js)$">
+    Header set Cache-Control "no-cache"
+    Header unset Expires
+  </FilesMatch>
   Header always set X-Content-Type-Options "nosniff"
   Header always set X-Frame-Options "SAMEORIGIN"
   Header always set Referrer-Policy "same-origin"

@@ -34,12 +34,12 @@ const OLD_APP = ['api', 'fonts', 'static', 'asset-manifest.json', 'favicon.ico',
 const OLD_GAME = 'whowill26';
 
 const KILL_SW = `/* Who Will Prevail. This address used to host a React app whose service worker served its cached pages. This
-   replacement deletes those caches, removes itself and reloads the open tabs, so visitors get the game. */
+   replacement deletes those caches, removes itself and reloads the open tabs on the game. */
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => e.waitUntil((async () => {
   for (const k of await caches.keys()) await caches.delete(k);
   await self.registration.unregister();
-  for (const c of await self.clients.matchAll({ type: 'window' })) c.navigate(c.url);
+  for (const c of await self.clients.matchAll({ type: 'window' })) c.navigate('/'); /* not the old app's route (/login) */
 })()));
 `;
 const MOVED = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="robots" content="noindex">
