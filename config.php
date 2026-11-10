@@ -75,7 +75,7 @@ return [
 
   /* ZOHO CRM. "Import from Zoho CRM" (Card forge > Bulk import) adds the CRM's active users as players.
      In the Zoho API Console create a "Server-based Applications" client with this Redirect URI:
-       <the game's address>zoho-callback.php     e.g. https://whowillprevail.com/whowill26/zoho-callback.php
+       <the game's address>zoho-callback.php     e.g. https://whowillprevail.com/zoho-callback.php
      (the import screen shows the exact address). Put its Client ID and Client Secret in config.local.php,
      not here, so they never end up in git:  <?php return ['zoho' => ['client_id' => '...', 'client_secret' => '...']];
      accounts_url is the Zoho sign-in server of your data center (Canada: https://accounts.zohocloud.ca). */

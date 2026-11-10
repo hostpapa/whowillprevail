@@ -1,5 +1,7 @@
 DirectoryIndex index.html
 Options -Indexes
+# deploy backups (deploy.js) are never served
+RedirectMatch 404 ^/(_backup|_deploy-new)(/|$)
 <FilesMatch "^(config\.php|config\.local\.php|configs\.js|\.env|security\.php|mailer\.php|zoho\.php|seed\.json|README-UA\.txt|.*\.sqlite.*)$">
   <IfModule mod_authz_core.c>
     Require all denied

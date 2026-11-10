@@ -97,7 +97,7 @@ ZohoCRM.users.READ), у Zoho нічого не змінює.
 Налаштування (один раз):
 1. Zoho API Console (api-console.zohocloud.ca, наш акаунт у канадському дата-центрі): клієнт типу
    "Server-based Applications". У Authorized Redirect URIs додайте адресу гри + zoho-callback.php, наприклад
-     https://whowillprevail.com/whowill26/zoho-callback.php
+     https://whowillprevail.com/zoho-callback.php
    Точну адресу показує сама гра на екрані "Connect Zoho CRM" (кнопка Copy).
 2. Client ID і Client Secret цього клієнта впишіть у config.local.php (лежить поруч із config.php, у git НЕ потрапляє):
      <?php return ['zoho' => ['client_id' => '...', 'client_secret' => '...']];
@@ -114,16 +114,26 @@ ZohoCRM.users.READ), у Zoho нічого не змінює.
 
 Деплой на хостинг (FTP)
 -----------------------
+Гра живе в корені сайту: https://whowillprevail.com/ (папка /public на FTP).
 Доступ до FTP: configFtp у configs.js (у git не потрапляє, на хостинг НЕ завантажувати): user, password, host, port,
-remoteRoot (папка гри на FTP, наприклад /public_html/whowill26), siteUrl (адреса гри для перевірки після деплою).
+remoteRoot: '/public' (корінь сайту), siteUrl (адреса гри для перевірки, за замовчуванням https://whowillprevail.com/).
 secure: за замовчуванням FTPS (шифроване з'єднання з перевіреним сертифікатом). Наш хостинг FTPS не підтримує:
 тоді потрібно явно поставити secure: false (звичайний FTP, пароль іде мережею відкритим текстом).
   npm install                    один раз (бібліотека basic-ftp)
   npm run deploy:dry             показує план, нічого не змінює
   npm run deploy -- --yes        деплой
-Перший деплой переносить усе, що лежить у папці гри, у _backup-<дата>/ (крім config.php і data/, вони лишаються на
-місці; копія config.php теж іде в бекап). Нові файли спершу заливаються в _deploy-new/ і потім переносяться на місце,
-тож гра недоступна лише кілька секунд. Наступні деплої просто перезаписують файли гри.
+Перший деплой (у корені ще немає папки _backup) переносить гру з /whowill26 у корінь:
+  - стара React-апка з кореня (api/, fonts/, static/, index.html, asset-manifest.json, favicon.ico, robots.txt,
+    service-worker.js, precache-manifest.*) і стара гра whowill26/ їдуть у _backup/<дата>/ (з вебу закрито);
+  - робочий config.php гри (whowill26/config.php) і її data/ переходять у корінь; test/ не чіпається;
+  - нові файли спершу заливаються в _deploy-new/, потім переносяться на місце: сайт недоступний кілька секунд;
+  - /whowill26/ стає сторінкою-переадресацією в корінь із збереженням #посилання, тож запрошення й скидання пароля
+    з уже надісланих листів працюють;
+  - у корінь кладеться service-worker.js, який прибирає з браузерів відвідувачів service worker старої React-апки
+    (інакше він показував би їм старий сайт із кешу).
+ПІСЛЯ першого деплою: Branding > Game link = https://whowillprevail.com/ (адреса в листах і для Zoho), у Zoho API
+Console додати Redirect URI https://whowillprevail.com/zoho-callback.php. Усім доведеться увійти ще раз (сесії
+прив'язані до адреси). Наступні деплої просто перезаписують файли гри.
 config.php заливається лише з --with-config (на сервері своя копія з робочими налаштуваннями). Після деплою скрипт
 перевіряє api.php?op=info.
 
