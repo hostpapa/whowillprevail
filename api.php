@@ -246,8 +246,8 @@ require __DIR__ . '/security.php';
 require __DIR__ . '/mailer.php';
 require __DIR__ . '/zoho.php';
 
-/* back from Zoho's sign-in (zoho-callback.php, a GET): stores the connection, then redirects to the game */
-if (defined('WWP_ZOHO_CALLBACK')) { $pdo = db(); zoho_callback($pdo, sess_current($pdo)); }
+/* back from "Sign in with Zoho" (zoho-callback.php, a GET): signs the admin in, then redirects to the game */
+if (defined('WWP_ZOHO_CALLBACK')) zoho_callback(db());
 
 /* ---------- diagnostics (GET, needs the setup key) ----------
    api.php?diag=1&key=...   api.php?seclog=1&key=...   api.php?mailtest=1&to=you@example.com&key=... */
@@ -326,7 +326,7 @@ switch ($op) {
          'needsSetup' => readDoc($pdo, 'settings/auth') === null]);
 
   case 'session':
-    out(['ok' => true]);
+    out(['ok' => true, 'zohoLogin' => zoho_login_enabled($pdo)]);
 
   /* ----- sign in / out ----- */
   case 'login': {
@@ -364,7 +364,7 @@ switch ($op) {
   }
 
   case 'logout':
-    sess_destroy($pdo);
+    zoho_signout($pdo, $S); sess_destroy($pdo);
     out(['ok' => true]);
 
   /* ----- admin login: first-time setup and later changes ----- */
@@ -569,25 +569,19 @@ switch ($op) {
     if ($data === null) fail('server_error', 'Claude did not return JSON', 502);
     out(['data' => $data]);
 
-  /* ----- Zoho CRM player import (admin only; see zoho.php) ----- */
-  case 'zoho_status':
-    need_role($pdo, $S, 'admin', 'zoho');
-    out(['ok' => true] + zoho_status($pdo));
-
-  case 'zoho_connect':
-    need_role($pdo, $S, 'admin', 'zoho');
-    try { out(['ok' => true, 'url' => zoho_auth_url($pdo, $S)]); }
+  /* ----- Zoho: admin sign-in and the CRM player import (see zoho.php) ----- */
+  case 'zoho_login': {
+    $ip = client_ip();
+    if (($w = rl_blocked($pdo, "login:fail:$ip", sec_num('login_fail_per_ip', 60), 600)) || ($w = rl_blocked($pdo, "login:all:$ip", sec_num('login_attempts_per_ip', 600), 600))) fail_rate($w);
+    rl_hit($pdo, "login:all:$ip", 600);
+    try { out(['ok' => true, 'url' => zoho_login_url($pdo, !empty($in['keep']))]); }
     catch (ZohoError $e) { fail($e->zcode, $e->getMessage(), 409); }
-
+  }
   case 'zoho_users':
     need_role($pdo, $S, 'admin', 'zoho');
-    try { out(['ok' => true, 'users' => zoho_users($pdo)]); }
+    if (empty($S['zoho'])) fail('zoho_signin', 'Import from Zoho CRM is available to admins who sign in with Zoho.', 409);
+    try { out(['ok' => true, 'users' => zoho_users($pdo, $S['zoho'])]); }
     catch (ZohoError $e) { fail($e->zcode, $e->getMessage(), $e->zcode === 'zoho_error' ? 502 : 409); }
-
-  case 'zoho_disconnect':
-    need_role($pdo, $S, 'admin', 'zoho');
-    zoho_disconnect($pdo); sec_event($pdo, $S, 'zoho', 'disconnected');
-    out(['ok' => true]);
 
   default:
     fail('invalid_argument', 'Unknown operation');

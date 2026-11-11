@@ -87,32 +87,39 @@ api.php?mailtest=1&to=АДРЕСА&key=КЛЮЧ    тестовий лист (а
 у адмінці, як і раніше. Тепер адмін бачить причину в сповіщенні.
 Додатковий захист хука: впишіть довгий випадковий рядок у mail.secret і додайте в Zap фільтр "secret дорівнює цьому рядку".
 
-Імпорт гравців із Zoho CRM
---------------------------
-Card forge > Bulk import players > "Import from Zoho CRM" додає активних користувачів Zoho CRM як гравців: ім'я,
-email і роль. Далі все як з Excel: попередній перегляд, галочки (кого НЕ додавати, зніміть галочку), фільтр за іменем,
-email чи роллю, картки й запрошення. Хто вже в грі, пропускається. Гра лише ЧИТАЄ список користувачів (scope
-ZohoCRM.users.READ), у Zoho нічого не змінює.
+Вхід через Zoho та імпорт гравців із Zoho CRM
+-----------------------------------------------
+На екрані входу (вкладка Admin) є кнопка "Sign in with Zoho". Нею входять адміни, чиї Zoho email записані в
+zoho.admin_emails (config.local.php). Будь-хто інший після входу в Zoho бачить "This Zoho account isn't allowed to
+manage the game", доступу не отримує, а спроба пишеться в журнал безпеки (api.php?seclog=1&key=...). Email має бути
+підтверджений у Zoho. Якщо прибрати email зі списку, його сесія в грі закривається одразу.
+
+Лише адмін, який увійшов через Zoho, може імпортувати гравців: Card forge > Bulk import players > "Import from Zoho
+CRM" додає активних користувачів Zoho CRM (ім'я, email, роль). Далі все як з Excel: попередній перегляд, галочки
+(кого НЕ додавати, зніміть галочку), фільтр за іменем, email чи роллю, картки й запрошення. Хто вже в грі,
+пропускається. Гра лише ЧИТАЄ список користувачів (scope ZohoCRM.users.READ) від імені цього адміна, у Zoho нічого не
+змінює. Адмін, який увійшов логіном і паролем, імпорту з Zoho не має (кнопка пояснює, як його отримати).
 
 Налаштування (один раз):
 1. Zoho API Console (api-console.zohocloud.ca, наш акаунт у канадському дата-центрі): клієнт типу
    "Server-based Applications". Його Authorized Redirect URI вже є: https://whowillprevail.com (адреса гри), і саме її
-   гра передає в Zoho (config.php: zoho.redirect_uri). Zoho повертає адміна на головну сторінку гри, а та одразу
-   передає одноразовий код у zoho-callback.php. Нічого додавати в Zoho не треба.
+   гра передає в Zoho (zoho.redirect_uri). Zoho повертає адміна на головну сторінку гри, а та одразу передає
+   одноразовий код у zoho-callback.php. Нічого додавати в Zoho не треба.
    Якщо Zoho на вході пише "Invalid Redirect Uri", значення в Zoho інше (наприклад з "/" у кінці): впишіть у
    zoho.redirect_uri точно те, що стоїть у Zoho. Без redirect_uri гра використовує адресу гри + zoho-callback.php.
-2. Client ID і Client Secret цього клієнта впишіть у config.local.php (лежить поруч із config.php, у git НЕ потрапляє):
-     <?php return ['zoho' => ['client_id' => '...', 'client_secret' => '...']];
-   і завантажте його на хостинг. Інший дата-центр: додайте 'accounts_url' (наприклад https://accounts.zoho.com).
-3. Заповніть Branding > Game link (або security.game_url): Zoho повертає адміна на цю адресу.
-4. Адмін натискає "Import from Zoho CRM" > "Connect Zoho CRM", входить у Zoho акаунтом, який бачить користувачів
-   CRM, і дозволяє доступ. Гра повертається сама й показує список. Далі підключення тримається, повторно входити не
-   треба. "Disconnect Zoho CRM" відключає (і відкликає доступ у Zoho).
+2. config.local.php (лежить поруч із config.php, у git НЕ потрапляє, deploy.js його завантажує):
+     <?php return ['zoho' => ['client_id' => '...', 'client_secret' => '...',
+       'redirect_uri' => 'https://whowillprevail.com', 'admin_emails' => ['someone@hostpapa.com', '...']]];
+   Порожній admin_emails = вхід через Zoho вимкнений, кнопки немає. Інший дата-центр: додайте 'accounts_url'
+   (наприклад https://accounts.zoho.com). У config.php admin_emails лишайте порожнім.
+3. Додати чи прибрати адміна: змініть admin_emails у config.local.php і задеплойте (npm run deploy -- --yes).
 
-Безпека: секрет клієнта й токен Zoho живуть лише на сервері. Токен зберігається зашифрованим у таблиці wwp_secrets
-(створюється сама при першому запиті); сторінка гри їх не бачить. Підключення прив'язане до сесії адміна й одноразового
-коду state, тож чужий вхід у Zoho підставити не можна.
-Якщо змінити client_secret у конфігу, збережене підключення перестає читатися: просто підключіть Zoho ще раз.
+Безпека: секрет клієнта й токени Zoho живуть лише на сервері, зашифровані в таблиці wwp_secrets (окремо для кожного
+адміна); сторінка гри їх не бачить. Хто увійшов, гра бере з ID-токена Zoho (email, підтверджений Zoho). Повернення з
+Zoho прив'язане до браузера (cookie з одноразовим кодом state), тож чужий вхід підставити не можна. Чужі й
+непідтверджені входи одразу відкликаються в Zoho. Коли адмін виходить з останньої сесії, гра відкликає його токен у
+Zoho. Вхід через Zoho має ті самі ліміти невдалих спроб, що й вхід паролем.
+Якщо змінити client_secret у конфігу, збережені токени перестають читатися: адміну досить увійти через Zoho ще раз.
 
 Деплой на хостинг (FTP)
 -----------------------
@@ -145,9 +152,11 @@ config.php заливається лише з --with-config (на сервері
   хостинг ховає адреси за проксі: увімкніть trust_forwarded_for (див. "your_ip_as_seen_by_the_game").
 Усіх виходить із гри: сесії перевіряються на сервері; після зміни пароля, скидання чи видалення акаунта вхід скасовується.
 Забули пароль адміна: видаліть запис settings/auth у таблиці wwp_docs (phpMyAdmin) і відкрийте гру з ?setup=КЛЮЧ.
-Zoho: "Zoho didn't give the game access": у клієнті Zoho немає точної Redirect URI з екрана Connect, або це не
-  Server-based клієнт. "Zoho CRM isn't set up": немає config.local.php з client_id / client_secret на хостингу.
-  "may not read the CRM users": акаунт, яким підключились, не бачить користувачів CRM; підключіться адміном Zoho.
+Zoho: "Zoho didn't sign you in": у клієнті Zoho не та Redirect URI (див. zoho.redirect_uri), це не Server-based
+  клієнт, або Zoho не дав ID-токен (у журналі PHP "wwp zoho: sign-in failed"). "Zoho isn't set up": немає
+  config.local.php з client_id / client_secret на хостингу. Немає кнопки "Sign in with Zoho": порожній admin_emails.
+  "isn't allowed to manage the game": email не в admin_emails. "may not read the CRM users": у цього адміна в Zoho
+  немає доступу до списку користувачів CRM.
 
 Файли
 -----
@@ -157,7 +166,7 @@ security.php                   сесії, паролі, права, ліміт�
 mailer.php                     тексти листів і відправка
 config.php                     налаштування (БД, пошта, безпека): нікому не пересилайте
 config.local.php               секрети поза git (клієнт Zoho); завантажити на хостинг поруч із config.php
-zoho.php, zoho-callback.php    підключення до Zoho CRM та повернення з входу в Zoho (імпорт гравців)
+zoho.php, zoho-callback.php    вхід адмінів через Zoho та імпорт гравців із Zoho CRM
 seed.json                      початкові дані для порожньої бази
 check.php                      перевірка хостингу (видалити після використання)
 .htaccess, web.config          закривають config.php, config.local.php, security.php, mailer.php, zoho.php, seed.json, базу

@@ -2541,11 +2541,12 @@ const ADMIN_TABS=["move","forge","seasons","brand"];
 let gateForce=false, gateFirst=true, ROLE=null, gateRole=(location.hash==="#admin")?"admin":"player", userCap=null, canSetup=false, fails=0, lockUntil=0;
 /* The server signs people in and keeps the session in an httpOnly cookie; this page only mirrors who the server says you are.
    (pwHash / makeAuth / pbkdf2 below are only used by the old offline demo mode.) */
-let SESSION=null, NEED_LOGOUT=false; /* {role:"admin"} | {role:"player",key,pid} | null */
+let SESSION=null, NEED_LOGOUT=false; /* {role:"admin",zoho} | {role:"player",key,pid} | null; zoho: the email of an admin who signed in with Zoho */
+let ZOHO_LOGIN=false; /* the server offers "Sign in with Zoho" to admins */
 const SRV=(op,body)=>window.claude?.server?window.claude.server.call(op,body||{}):Promise.reject(Object.assign(new Error("No server"),{code:"no_server"}));
 let sessGen=0; /* counts local sign-in changes, so answers that were asked for before a change can be ignored */
 let LOADING=false; /* just signed in: show "Loading" until the first read for the new role has arrived (until then the page only has the public view) */
-const sessSet=(v,quiet)=>{SESSION=v&&v.role?{role:v.role,key:v.key||null,pid:v.pid||null}:null;sessGen++;
+const sessSet=(v,quiet)=>{SESSION=v&&v.role?{role:v.role,key:v.key||null,pid:v.pid||null,zoho:v.zoho||null}:null;sessGen++;
   if(quiet)return;
   LOADING=!!SESSION; const done=()=>{LOADING=false;if(S.ready){render();renderGate()}};
   try{window.claude.server.refresh().then(done,done)}catch{done()}};
@@ -2584,7 +2585,7 @@ function applyRole(){
   $("#gate").hidden=!!ROLE; document.querySelector(".wrap").hidden=!ROLE;
   ADMIN_TABS.forEach(t=>{const b=document.querySelector(`nav.tabs [data-tab="${t}"]`);if(b)b.hidden=ROLE!=="admin"});
   if(ROLE){setTab(ROLE!=="admin"&&ADMIN_TABS.includes(tab)?"arena":tab);if(ROLE==="admin")autoIssueResets()}else{gateForce=true;renderGate();syncMusic()}
-  if(ROLE==="admin"&&ZOHO_BACK){const z=ZOHO_BACK;ZOHO_BACK=null;setTimeout(()=>zohoBack(z),0)}
+  if(ROLE==="admin"&&ZOHO_BACK==="ok"){ZOHO_BACK=null;setTimeout(()=>toast("WELCOME, ADMIN!","Signed in with Zoho. Import from Zoho CRM is in the Card forge."),0)}
 }
 function signOut(){sessClear();ROLE=null;ME=null;playerView="signin";EMAILED=null;SELMOVE=null;MVNOTE=null;applyRole();syncMovesSub();toast("SEE YOU!","Signed out.")}
 function fanCards(){
@@ -2635,12 +2636,15 @@ function renderGate(){
     <div class="opts"><label><input type="checkbox" id="lgKeep" ${adm?"":"checked"}> Keep me signed in</label></div>
     <div class="msg" id="lgMsg" hidden></div>
     <button type="submit" class="btn go" id="lgGo">${adm?"Open game control":"Enter the arena"}</button>
+    ${adm&&ZOHO_LOGIN?`<div class="or">or</div><button type="button" class="sso" id="lgZoho">Sign in with Zoho</button>`:""}
     <p class="help">${adm?"Players use the other tab.":"Forgot the login? Ask a game admin."}</p>
     ${S.mode==="memory"?`<div class="demo-hint"><b>Demo logins</b> (this preview only): player <code>players</code> / <code>letsplay</code> · admin <code>admin</code> / <code>gamemaster</code></div>`:""}
   </form>`;
   gateFirst=false;
   card.querySelectorAll(".who button").forEach(b=>b.onclick=()=>{gateRole=b.dataset.role;playerView="signin";renderGate();($("#lgUser")||$("#lgEmail"))?.focus()});
   $("#lgShow").onclick=()=>{const i=$("#lgPw"),on=i.type==="password";i.type=on?"text":"password";$("#lgShow").textContent=on?"Hide":"Show"};
+  if($("#lgZoho"))$("#lgZoho").onclick=()=>zohoSignIn($("#lgZoho"));
+  if(ZOHO_BACK){const m=$("#lgMsg");m.hidden=false;m.className="msg err";m.textContent=ZOHO_BACK_TXT[ZOHO_BACK]||ZOHO_BACK_TXT.token;ZOHO_BACK=null} /* back from Zoho, not signed in */
   $("#loginForm").addEventListener("submit",async e=>{e.preventDefault();
     const m=$("#lgMsg"),go=$("#lgGo"),u=$("#lgUser").value.trim().toLowerCase(),pw=$("#lgPw").value;
     const show=t=>{m.hidden=false;m.className="msg err";m.textContent=t};
@@ -3588,7 +3592,6 @@ function renderImport(){
   if(!IMP){el.innerHTML="";return}
   if(IMP.fatal){el.innerHTML=`<div class="msg err" role="alert">${esc(IMP.fatal)}</div><div class="row"><button type="button" class="btn secondary" data-imp="cancel">Close</button></div>`;return}
   if(IMP.phase==="parsing"){el.innerHTML=`<p class="small"><span>Reading</span> <b class="notranslate">${esc(IMP.file)}</b>…</p>`;return}
-  if(IMP.phase==="zconnect"){el.innerHTML=zohoConnectHTML();return}
   const c=IMP.counts, done=IMP.phase==="done", running=IMP.phase==="running", zoho=IMP.source==="zoho", pick=zoho&&!done&&!running;
   const rowStatus=r=>{
     if(done||running){if(r.result==="created")return `<span class="st active">Created</span> ${r.invite==="ready"?`<span class="st pending">Invitation ready to send</span>`:r.invite==="sent"?`<span class="st sent">Invitation sent</span>`:`<span class="st failed">Invitation failed</span>`}`;
@@ -3605,7 +3608,7 @@ function renderImport(){
   const res=IMP.rows.filter(r=>r.result==="created").length, failed=IMP.rows.filter(r=>r.result==="failed").length, skipped=IMP.rows.filter(r=>r.result==="skip").length;
   const invReady=IMP.rows.filter(r=>r.invite==="ready").length, invSent=IMP.rows.filter(r=>r.invite==="sent").length, invFail=IMP.rows.filter(r=>r.result==="created"&&r.invite==="failed").length;
   el.innerHTML=`
-  <div class="imp-head">${zoho?`<div class="row" style="justify-content:space-between"><p class="small" style="margin:0"><span>Source:</span> <b>Zoho CRM</b> · <span>active users: ${IMP.rows.length}</span></p>${pick?`<button type="button" class="btn secondary sm" data-imp="zdisc">Disconnect Zoho CRM</button>`:""}</div>`
+  <div class="imp-head">${zoho?`<p class="small" style="margin:0"><span>Source:</span> <b>Zoho CRM</b> · <span>active users: ${IMP.rows.length}</span>${SESSION?.zoho?` · <span>read as</span> <b class="notranslate">${esc(SESSION.zoho)}</b>`:""}</p>`
     :`<p class="small" style="margin:0"><span>File:</span> <b class="notranslate">${esc(IMP.file)}</b> · <span>sheet</span> <b class="notranslate">${esc(IMP.sheet)}</b></p>`}
   ${done?`<div class="msg info" role="status"><b>Import finished.</b> <span>Players created: ${res}</span> · <span>Skipped (already registered): ${skipped+c.skip}</span> · <span>Not imported because of errors: ${c.error}</span>${IMP.rows.some(r=>r.photoAdded)?` · <span>Headshots added: ${IMP.rows.filter(r=>r.photoAdded).length}</span>`:""}${failed?` · <span>Failed to save: ${failed}</span>`:""}<br>${invReady?`<span>${invReady} invitation emails are ready to send in Player accounts below.</span> `:""}${invSent?`<span>Invitations sent: ${invSent}</span> `:""}${invFail?`<span>Invitations that failed: ${invFail}. Use Resend in Player accounts.</span>`:""}</div>`
   :`<div class="imp-sum"><span class="st active"><span>${c.ok}</span> <span>ready</span></span> <span class="st none"><span>${c.skip}</span> <span>already registered</span></span> <span class="st failed"><span>${c.error}</span> <span>with errors</span></span>${IMP.blank?` <span class="small muted">Empty rows ignored: ${IMP.blank}</span>`:""}</div>`}
@@ -3675,25 +3678,30 @@ $("#bulkPhotos").addEventListener("change",()=>{const fs=[...$("#bulkPhotos").fi
 $("#bulkOut").addEventListener("click",e=>{const b=e.target.closest("[data-imp]");if(!b)return;
   if(b.dataset.imp==="photos"){$("#bulkPhotos").click();return}
   if(b.dataset.imp==="cancel"){IMP=null;renderImport();return}
-  if(b.dataset.imp==="zconnect"){zohoConnect(b);return}
-  if(b.dataset.imp==="zdisc"){zohoDisconnect(b);return}
-  if(b.dataset.imp==="zcopy"){const u=IMP?.redirectUri||"";copyRich(esc(u),u).then(ok=>toast(ok?"COPIED!":"HOLD UP",ok?"Redirect URI copied.":"This browser blocked copying."));return}
   if(b.dataset.imp==="go"&&IMP?.phase==="preview"){b.disabled=true;runImport()}});
 
-/* ---------- import from Zoho CRM ----------
-   The server holds the Zoho connection (zoho.php: Server-based client, refresh token kept encrypted, read-only scope
-   ZohoCRM.users.READ). The page asks for the CRM's active users and feeds them to the same preview and import as the
-   spreadsheet: everyone ready is ticked, the admin unticks who shouldn't play. */
-var ZOHO_BACK=null; /* the result of the Zoho sign-in (#zoho.<result>), handled once an admin is signed in */
-{const m=/^#zoho\.([a-z]+)$/.exec(location.hash); if(m){ZOHO_BACK=m[1];try{history.replaceState(null,"",location.pathname+location.search)}catch{}}}
-const ZOHO_BACK_TXT={denied:"Zoho CRM wasn't connected: access wasn't allowed in Zoho.",
-  state:"That Zoho sign-in expired or was started in another window. Try Connect Zoho CRM again.",
-  signin:"Sign in as admin first, then connect Zoho CRM again.",
-  token:"Zoho didn't give the game access. Check that the Zoho client is a Server-based application with the Redirect URI shown in the import, then try again."};
+/* ---------- Zoho: admin sign-in and the import from Zoho CRM ----------
+   "Sign in with Zoho" (admin sign-in screen) goes to Zoho and back through zoho-callback.php; the server lets in only
+   the emails in zoho.admin_emails (zoho.php). That sign-in also lets the server read the CRM's active users for this
+   admin (read-only scope ZohoCRM.users.READ; the tokens never reach the page). The import feeds them to the same
+   preview and import as the spreadsheet: everyone ready is ticked, the admin unticks who shouldn't play. */
+var ZOHO_BACK=null; /* the result of the Zoho sign-in (#zoho.<result>) */
+{const m=/^#zoho\.([a-z]+)$/.exec(location.hash); if(m){ZOHO_BACK=m[1];gateRole="admin";try{history.replaceState(null,"",location.pathname+location.search)}catch{}}}
+const ZOHO_BACK_TXT={denied:"Zoho sign-in was cancelled.",
+  state:"That Zoho sign-in expired or was started in another window. Try again.",
+  notallowed:"This Zoho account isn't allowed to manage the game. Ask the person who runs the game to add your email.",
+  unverified:"Your Zoho email address isn't verified yet. Verify it in Zoho, then try again.",
+  busy:"Too many sign-in tries from this network. Wait a few minutes and try again.",
+  ok:"You signed in at Zoho, but this browser didn't keep the game's sign-in. Allow cookies for this site and try again.",
+  token:"Zoho didn't sign you in. Try again; if it keeps happening, ask the person who runs the game to check the Zoho settings."};
 const zohoErrText=e=>e?.code==="no_game_url"?"Set the Game link in Branding (or game_url in config.php) first: Zoho sends you back to that address after you sign in."
-  :e?.code==="zoho_not_configured"?"Zoho CRM isn't set up on this server yet. Put the Zoho client ID and secret in config.local.php (see the ZOHO CRM part of config.php)."
+  :e?.code==="zoho_not_configured"?"Zoho isn't set up on this server yet. Put the Zoho client ID and secret in config.local.php (see the ZOHO part of config.php)."
   :e?.code==="permission_denied"?"Sign in as admin to import from Zoho CRM."
-  :e?.message||"Couldn't reach Zoho CRM. Try again.";
+  :e?.code==="rate_limited"?`Too many tries. Wait ${e.retryAfter||30} seconds and try again.`
+  :e?.message||"Couldn't reach Zoho. Try again.";
+async function zohoSignIn(b){b.disabled=true;
+  try{const r=await SRV("zoho_login",{keep:!!$("#lgKeep")?.checked});location.href=r.url}
+  catch(e){b.disabled=false;const m=$("#lgMsg");if(m){m.hidden=false;m.className="msg err";m.textContent=zohoErrText(e)}}}
 const ZSRC={file:"Zoho CRM",source:"zoho"};
 async function zohoRows(users){
   const rows=[],seen=new Map(); let n=0;
@@ -3709,36 +3717,12 @@ async function zohoRows(users){
   return {rows,warnings:[],counts,blank:0,photos:new Map()};
 }
 async function startZohoImport(){
+  if(!SESSION?.zoho){IMP={...ZSRC,fatal:"Import from Zoho CRM is available when you sign in with Zoho. Sign out, then choose Sign in with Zoho on the admin sign-in screen."};renderImport();return}
   IMP={...ZSRC,phase:"parsing"};renderImport();
-  try{const st=await SRV("zoho_status");
-    if(!st.configured)IMP={...ZSRC,fatal:zohoErrText({code:"zoho_not_configured"})};
-    else if(!st.connected)IMP={...ZSRC,phase:"zconnect",redirectUri:st.redirectUri};
-    else{const r=await SRV("zoho_users");
-      IMP=r.users?.length?{...ZSRC,phase:"preview",...await zohoRows(r.users)}:{...ZSRC,fatal:"Zoho CRM has no active users to import."}}}
-  catch(e){
-    if(e?.code==="zoho_not_connected"){const st=await SRV("zoho_status").catch(()=>({}));IMP={...ZSRC,phase:"zconnect",note:e.message,redirectUri:st.redirectUri}}
-    else IMP={...ZSRC,fatal:zohoErrText(e)}}
+  try{const r=await SRV("zoho_users");
+    IMP=r.users?.length?{...ZSRC,phase:"preview",...await zohoRows(r.users)}:{...ZSRC,fatal:"Zoho CRM has no active users to import."}}
+  catch(e){IMP={...ZSRC,fatal:zohoErrText(e)}}
   renderImport(); $("#bulkOut").scrollIntoView({block:"nearest",behavior:"smooth"});
-}
-function zohoConnectHTML(){
-  const ru=IMP.redirectUri;
-  return `<div class="msg info" role="status"><b>Connect Zoho CRM</b><br>${IMP.note?`<span>${esc(IMP.note)}</span><br>`:""}
-    <span>Sign in to Zoho once with an account that can see the CRM users. The game only reads the list of active users (name, email, role) and never changes anything in Zoho.</span></div>
-    ${ru?`<p class="small" style="margin:0"><span>The Zoho client must list this Redirect URI:</span> <b class="notranslate em">${esc(ru)}</b> <button type="button" class="btn secondary sm" data-imp="zcopy">Copy</button></p>`
-      :`<p class="small err-t">${esc(zohoErrText({code:"no_game_url"}))}</p>`}
-    <div class="row"><button type="button" class="btn" data-imp="zconnect"${ru?"":" disabled"}>Connect Zoho CRM</button><button type="button" class="btn secondary" data-imp="cancel">Cancel</button></div>`;
-}
-async function zohoConnect(b){b.disabled=true;
-  try{const r=await SRV("zoho_connect");location.href=r.url}
-  catch(e){b.disabled=false;IMP={...ZSRC,fatal:zohoErrText(e)};renderImport()}}
-async function zohoDisconnect(b){b.disabled=true;
-  try{await SRV("zoho_disconnect");IMP=null;renderImport();toast("DONE","Zoho CRM is disconnected. Connect again to import.")}
-  catch(e){b.disabled=false;toast("HOLD UP",zohoErrText(e))}}
-/* back from Zoho's sign-in: carry on with the import, or say what went wrong */
-function zohoBack(what){
-  setTab("forge"); setTimeout(()=>$("#bulk")?.scrollIntoView({behavior:"smooth",block:"start"}),300);
-  if(what==="ok"){toast("CONNECTED!","Zoho CRM is connected.");startZohoImport();return}
-  IMP={...ZSRC,fatal:ZOHO_BACK_TXT[what]||ZOHO_BACK_TXT.token};renderImport();
 }
 const zMatch=r=>{const q=(IMP?.q||"").trim().toLowerCase();return !q||[r.name,r.email,r.role].some(v=>String(v||"").toLowerCase().includes(q))};
 const zVisible=()=>IMP.rows.filter(r=>r.status==="ok"&&zMatch(r));
@@ -4847,7 +4831,7 @@ setInterval(()=>{const now=Date.now();let crossed=false;
   sampleFn=sample||null;
   if(db){api=dbApi(db);S.mode="db";canSetup=userCap?await userCap.canEdit().catch(()=>false):false}else{api=memoryApi();S.mode="memory";canSetup=true;
     await api.set("settings/auth",await makeAuth("players","letsplay","admin","gamemaster",null))}
-  if(S.mode==="db"){if(NEED_LOGOUT)await SRV("logout").catch(()=>{});const ss=await SRV("session").catch(()=>null);sessSet(ss&&ss.sess,true)}
+  if(S.mode==="db"){if(NEED_LOGOUT)await SRV("logout").catch(()=>{});const ss=await SRV("session").catch(()=>null);ZOHO_LOGIN=!!ss?.zohoLogin;sessSet(ss&&ss.sess,true)}
   subscribe(); S.ready=true;
   if(S.mode==="memory"){await seedDemo();await seedDemoAccounts();note("")}
   if(ROLE)render(); else renderGate();

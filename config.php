@@ -73,11 +73,13 @@ return [
     'max_per_recipient_per_minute' => 20,
   ],
 
-  /* ZOHO CRM. "Import from Zoho CRM" (Card forge > Bulk import) adds the CRM's active users as players.
+  /* ZOHO. "Sign in with Zoho" on the admin sign-in screen, and "Import from Zoho CRM" (Card forge > Bulk import), which
+     adds the CRM's active users as players and is available to admins who signed in with Zoho.
+     admin_emails: the Zoho accounts (their verified email) that may sign in as admin. Empty = no Zoho sign-in.
      In the Zoho API Console create a "Server-based Applications" client with this Redirect URI:
        <the game's address>zoho-callback.php     e.g. https://whowillprevail.com/zoho-callback.php
-     (the import screen shows the exact address). Put its Client ID and Client Secret in config.local.php,
-     not here, so they never end up in git:  <?php return ['zoho' => ['client_id' => '...', 'client_secret' => '...']];
+     Put its Client ID and Client Secret, and admin_emails, in config.local.php, not here, so they never end up in git:
+       <?php return ['zoho' => ['client_id' => '...', 'client_secret' => '...', 'admin_emails' => ['someone@example.com']]];
      accounts_url is the Zoho sign-in server of your data center (Canada: https://accounts.zohocloud.ca).
      redirect_uri: set it when the Zoho client lists the site's own address instead (e.g. 'https://whowillprevail.com');
      it must match the Zoho client exactly, and the game must be at that address (its page forwards to zoho-callback.php). */
@@ -86,5 +88,6 @@ return [
     'client_secret' => '',
     'accounts_url' => 'https://accounts.zohocloud.ca',
     'redirect_uri' => '',   /* set in config.local.php, which deploy.js uploads */
+    'admin_emails' => [],   /* set in config.local.php; leave this one empty (the two lists are merged by position) */
   ],
 ];

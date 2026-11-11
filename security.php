@@ -77,7 +77,10 @@ function sec_read_note(PDO $pdo, array $S, string $target, int $hidden): void {
 }
 
 /* ---------- sessions (random token in an httpOnly cookie; only its SHA-256 is stored) ---------- */
-function sess_public(array $S): array { return $S['role'] === 'anon' ? ['role' => null] : ['role' => $S['role'], 'key' => $S['key'], 'pid' => $S['pid']]; }
+function sess_public(array $S): array {
+  if ($S['role'] === 'anon') return ['role' => null];
+  return ['role' => $S['role'], 'key' => $S['key'], 'pid' => $S['pid']] + (empty($S['zoho']) ? [] : ['zoho' => $S['zoho']]);
+}
 function sess_cookie(string $val, int $expires): void {
   setcookie('wwp_sid', $val, ['expires' => $expires, 'path' => cookie_path(), 'secure' => is_https(), 'httponly' => true, 'samesite' => 'Lax']);
 }
@@ -95,6 +98,11 @@ function sess_current(PDO $pdo): array {
     $a = readDoc($pdo, 'accounts/' . $r['subj']);
     if (!is_object($a) || ($a->status ?? '') !== 'active') { $pdo->prepare(q('DELETE FROM {sessions} WHERE sid=?'))->execute([$sid]); return sess_set_current(sess_anon()); }
     $S = ['role' => 'player', 'key' => (string)$r['subj'], 'pid' => (string)($a->pid ?? $r['pid']), 'sid' => $sid];
+  } elseif ($r['role'] === 'admin' && strpos((string)$r['subj'], 'zoho:') === 0) {
+    /* signed in with Zoho (zoho.php): an admin only while the email is still in zoho.admin_emails */
+    $email = zoho_admin_by_subj((string)$r['subj']);
+    if ($email === null) { $pdo->prepare(q('DELETE FROM {sessions} WHERE sid=?'))->execute([$sid]); return sess_set_current(sess_anon()); }
+    $S = ['role' => 'admin', 'key' => null, 'pid' => null, 'sid' => $sid, 'zoho' => $email];
   } elseif ($r['role'] === 'admin') {
     if (!is_object(readDoc($pdo, 'settings/auth'))) return sess_set_current(sess_anon());
     $S = ['role' => 'admin', 'key' => null, 'pid' => null, 'sid' => $sid];
