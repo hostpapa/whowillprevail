@@ -1,4 +1,5 @@
 <?php
+/* TEMPLATE. Copy this file to config.php (which is NOT in git) and fill in the real values there. */
 /* Who Will Prevail: settings. Keep this file private (it is blocked from the web by .htaccess). */
 return [
   /* Claude API key for generating card names, powers, stories and reading headshots.
@@ -9,17 +10,17 @@ return [
   /* One-time setup key. Needed (1) to create the admin login if it doesn't exist yet:
      open  https://your-site/who-will-prevail/?setup=THIS_KEY
      and (2) to open the diagnostics:  api.php?diag=1&key=THIS_KEY  */
-  'setup_key' => '76969f7d97297320cb7609becaa39100',
+  'setup_key' => '',
 
   /* DATABASE (MySQL / MariaDB). Create an empty database and a user in your hosting panel, then fill in the four
      values below. The tables are created automatically on the first request (the user needs CREATE rights). */
   'db' => [
     'driver' => 'mysql',
-    'host'   => 'sql5c40c.carrierzone.com',
+    'host'   => '',
     'port'   => 3306,
-    'name'   => 'whowill26_4oxwfgjjmy702978',
-    'user'   => '4oxwfgjjmy702978', 
-    'pass'   => 'pg*?L2Jga@-g6?9', 
+    'name'   => '',
+    'user'   => '', 
+    'pass'   => '', 
     'prefix' => 'wwp_',        /* table name prefix; lets the game share a database with other apps */
   ],
 
@@ -62,7 +63,7 @@ return [
        provider 'brevo' | 'sendgrid' | 'resend' : put the service's API key in 'key'; 'from' must be a verified sender. */
   'mail' => [
     'provider' => 'webhook',
-    'url' => 'https://hooks.zapier.com/hooks/catch/4559531/41jlfay/',
+    'url' => '',
     'key' => '',
     'from' => '',                       /* empty = noreply@<your site domain> (ignored by Zapier's Gmail step) */
     'from_name' => 'Who Will Prevail?',

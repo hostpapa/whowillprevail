@@ -1,5 +1,6 @@
 check.php
 seed.json
+config.php
 config.local.php
 configs.js
 .env
